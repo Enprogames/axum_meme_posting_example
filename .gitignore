@@ -19,3 +19,4 @@ target/
 .aws-sam/
 axum_server/target/
 .localstack/
+Cargo.lock
