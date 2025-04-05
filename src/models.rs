@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// The `Meme` struct represents a meme's metadata.
-/// 
+///
 /// Fields:
 /// - `meme_id`: A unique identifier (UUID) for the meme.
 /// - `title`: The meme's title.

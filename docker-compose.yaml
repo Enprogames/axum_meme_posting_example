@@ -2,10 +2,17 @@ services:
   localstack:
     image: localstack/localstack:latest
     ports:
-      - "4566:4566"
+      - "4566:4566" # Default port for all services
     environment:
       - SERVICES=dynamodb,s3
-      - DEBUG=1
-      - AWS_DEFAULT_REGION=ca-central-1
+      - DEBUG=1 # Use 0 or remove for less verbose logs
+      - AWS_DEFAULT_REGION=ca-central-1 # Set default region
+      # DOCKER_HOST is needed on some systems for LS to interact with the mounted socket
+      - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
-      - "./.localstack:/var/lib/localstack"
+      # Mount host directory to the *standard* persistence location inside the container
+      - "./.localstack/state:/var/lib/localstack"
+      # Mount the Docker socket (recommended for full functionality)
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      # You might still want the init hooks volume if you add initialization scripts later
+      # - "./.localstack/init:/etc/localstack/init/ready.d"

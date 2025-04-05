@@ -19,4 +19,13 @@ target/
 .aws-sam/
 axum_server/target/
 .localstack/
+# Rust build info
+target/
 Cargo.lock
+
+# Local AWS emulation
+.aws-sam/
+.localstack/
+
+# Other
+.env
