@@ -21,3 +21,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 dotenvy = "0.15" # To load .env files during development
+
+async-trait = "0.1"
+
+thiserror = "2.0" # Useful for defining custom errors
+mime_guess = "2.0" # For guessing Content-Type during S3 upload
