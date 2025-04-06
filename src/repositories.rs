@@ -119,7 +119,28 @@ impl MemeRepository for DynamoDbMemeRepository {
         tracing::info!("DynamoDB: Successfully listed {} memes", memes.len());
         Ok(memes)
     }
+
+    /// Deletes an item from DynamoDB using DeleteItem.
+    async fn delete(&self, id: Uuid) -> Result<(), RepoError> {
+        let id_str = id.to_string();
+        tracing::debug!(meme_id = %id_str, "DynamoDB: Deleting item");
+
+        self.client
+            .delete_item()
+            .table_name(MEMES_TABLE)
+            .key("meme_id", AttributeValue::S(id_str.clone()))
+            // Optionally add ConditionExpression to ensure item exists before deleting,
+            // but DeleteItem succeeds by default even if item not found.
+            .send()
+            .await
+            .context(format!("DynamoDB: Failed to delete meme (id: {})", id_str))?; // anyhow context -> BackendError
+
+        tracing::debug!(meme_id = %id_str, "DynamoDB: Delete request sent (item might not have existed)");
+        Ok(())
+    }
 }
+
+
 
 // Helper function to convert DynamoDB item map to Meme struct
 // Remains internal to this module.
