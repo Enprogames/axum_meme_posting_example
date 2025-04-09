@@ -1,2 +1,314 @@
-# axum_meme_posting_example
-Using Rust and Axum, with AWS DynamoDB and S3, to allow posting and retrieving text and images (memes)
+# Axum Meme Posting API Example
+
+This project is a simple web API built with Rust using the Axum web framework. It allows users to upload "memes" (consisting of a title, a description, and an image) and then view the information about those memes.
+
+It's built to use [AWS S3](https://aws.amazon.com/s3/) and [DynamoDB](https://aws.amazon.com/dynamodb/).
+
+## Project Structure
+
+The code is organized into several modules within the `src/` directory to separate concerns:
+
+```
+.
+├── .env             # Local environment variables (you create this)
+├── .env.example     # Example environment variables
+├── .localstack/     # Stores LocalStack data if docker-compose volume is used
+├── Cargo.toml       # Rust project manifest (dependencies)
+├── docker-compose.yml # Defines the LocalStack service for Docker
+└── src/             # Source code directory
+    ├── main.rs      # Main entry point: orchestrates setup & starts server
+    ├── config.rs    # Loads application configuration (e.g., bucket name)
+    ├── errors.rs    # Defines custom error types for different layers
+    ├── domain.rs    # Defines core logic interfaces (traits) like `MemeRepository`
+    ├── repositories.rs # Implements `MemeRepository` using DynamoDB
+    ├── storage.rs   # Implements `FileStorage` using S3
+    ├── handlers.rs  # Contains the Axum functions that handle specific API requests
+    ├── routes.rs    # Defines the API routes and maps them to handlers
+    ├── startup.rs   # Handles initialization of AWS resources (table, bucket)
+    ├── models.rs    # Defines the core `Meme` data structure
+    └── aws_clients.rs # Creates configured AWS SDK clients (for DynamoDB, S3)
+```
+
+This layered structure (main -> routes -> handlers -> domain -> repositories/storage) makes the code easier to understand, test, and modify.
+
+## Setup and Running
+
+Follow these steps to get the project running on your local machine.
+
+**Prerequisites:**
+
+1.  **Rust:** Install the Rust toolchain via [rustup](https://rustup.rs/).
+2.  **Docker:** Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (recommended for Windows/macOS) or Docker Engine + Docker Compose plugin (Linux). Docker needs to be running.
+3.  **(Optional) API Testing Tool:**
+    * `curl`
+
+**Steps:**
+
+1.  **Clone the Repository:**
+    ```bash
+    git clone git@github.com:Enprogames/axum_meme_posting_example.git
+    cd axum_meme_posting_example # Or the name of the cloned directory
+    ```
+
+2.  **Configure Environment:**
+    * Copy the example environment file:
+        * Linux/macOS: `cp .env.example .env`
+        * Windows: `copy .env.example .env`
+    * Review the `.env` file. The defaults (like `MEME_BUCKET_NAME=my-local-meme-bucket`) should work fine for local testing.
+
+3.  **Start LocalStack:**
+    * Open your terminal in the project directory.
+    * Run: `docker-compose up -d`
+        * This tells Docker Compose to start the `localstack` service defined in `docker-compose.yml`.
+        * The `-d` flag runs it in "detached" mode (in the background).
+    * Wait a few seconds for LocalStack to initialize. You can check its logs: `docker-compose logs -f localstack`. Press `Ctrl+C` to stop watching logs.
+    * To stop LocalStack later: `docker-compose down` (this will stop and remove the container).
+
+4.  **Build the Rust Project:**
+    * This compiles your Rust code into an executable. It might take a few minutes the first time.
+    * Run: `cargo build`
+
+5.  **Run the Rust Application:**
+    * This starts the Axum web server.
+    * Run: `cargo run`
+    * You should see log output, including messages indicating resource initialization and finally a line like:
+        `INFO axum_meme_posting_example: Server listening on http://0.0.0.0:3000`
+    * The server is now running and ready to accept requests! Keep this terminal open. To stop the server, press `Ctrl+C` in this terminal.
+
+## API Usage Examples
+
+You can interact with the running API using `curl` or tools like Postman.
+
+*(Note: If using standard Windows Command Prompt, you might need to adjust path separators (`\`) and potentially escape characters differently compared to the Linux/bash examples below. PowerShell is generally more compatible with these examples.)*
+
+**1. Upload a Meme**
+
+* **Endpoint:** `POST /upload_meme`
+* **Request Type:** `multipart/form-data`
+* **Fields:**
+    * `title`: (Text) The title of the meme.
+    * `description`: (Text) A description.
+    * `image`: (File) The image file itself.
+* **Example (`curl`):**
+    ```bash
+    curl -X POST http://localhost:3000/upload_meme \
+      -F "title=Red Panda" \
+      -F "description=A red panda" \
+      -F "image=./red_panda.jpg"
+    ```
+* **Successful Response (201 Created):**
+    ```json
+    {
+      "meme_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef", // Unique ID generated by server
+      "title": "Red Panda",
+      "description": "A red panda",
+      "image_key": "a1b2c3d4-e5f6-7890-1234-567890abcdef.jpg" // Filename in S3
+    }
+    ```
+
+**2. Retrieve a Specific Meme's Metadata**
+
+* **Endpoint:** `GET /meme/{id}`
+* **Path Parameter:** Replace `{id}` with the `meme_id` you received when uploading (or from the list below).
+* **Example (`curl`):**
+    ```bash
+    # Replace a1b2c3d4-e5f6-7890-1234-567890abcdef with an actual ID
+    curl http://localhost:3000/meme/a1b2c3d4-e5f6-7890-1234-567890abcdef
+    ```
+* **Successful Response (200 OK):**
+    ```json
+    {
+      "meme_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+      "title": "Red Panda",
+      "description": "A red panda",
+      "image_key": "a1b2c3d4-e5f6-7890-1234-567890abcdef.jpg"
+    }
+    ```
+* **Not Found Response (404 Not Found):**
+    ```json
+    {
+      "error": "Meme not found with ID: a1b2c3d4-0000-0000-0000-567890abcdef"
+    }
+    ```
+
+**3. List All Memes' Metadata**
+
+* **Endpoint:** `GET /memes`
+* **Example (`curl`):**
+    ```bash
+    curl http://localhost:3000/memes
+    ```
+* **Successful Response (200 OK):**
+    ```json
+    [
+      {
+        "meme_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef",
+        "title": "Red Panda",
+        "description": "A red panda",
+        "image_key": "a1b2c3d4-e5f6-7890-1234-567890abcdef.jpg"
+      },
+      {
+        "meme_id": "b2c3d4e5-f6a7-8901-2345-67890abcdef0",
+        "title": "Another Meme",
+        "description": "Something funny",
+        "image_key": "b2c3d4e5-f6a7-8901-2345-67890abcdef0.png"
+      }
+      // ... more memes
+    ]
+    ```
+
+**4. Retrieve a Meme Image**
+
+* **Endpoint:** `GET /images/{key}`
+* **Path Parameter:** Replace `{key}` with the `image_key` from a meme's metadata (e.g., `a1b2c3d4-e5f6-7890-1234-567890abcdef.jpg`).
+* **How it Works:** This endpoint acts as a proxy. When you request it, the API fetches the image file directly from the S3 storage (LocalStack) and streams the image data back to you in the response with the correct Content-Type.
+* **Example (Browser / `<img>` tag):**
+    You can use this URL directly in an HTML `<img>` tag:
+    ```html
+    <img src="http://localhost:3000/images/a1b2c3d4-e5f6-7890-1234-567890abcdef.jpg" alt="My Cat Meme">
+    ```
+    *(Replace the image key with a real one from an uploaded meme)*
+* **Example (`curl`):**
+    * Use `curl` with the `-o` flag to save the output to a file.
+    ```bash
+    # Replace the image key with a real one
+    curl http://localhost:3000/images/a1b2c3d4-e5f6-7890-1234-567890abcdef.jpg -o output_image.jpg
+    ```
+    * This will download the image and save it as `output_image.jpg`.
+* **Successful Response (200 OK):** The raw image data with the appropriate `Content-Type` header (e.g., `image/jpeg`).
+* **Not Found Response (404 Not Found):**
+    ```json
+    {
+      "error": "Image not found with key: non_existent_key.png"
+    }
+    ```
+
+**5. Delete a Meme**
+
+* **Endpoint:** `DELETE /meme/{id}`
+* **Path Parameter:** Replace `{id}` with the `meme_id` of the meme you want to delete.
+* **How it Works:** This request tells the API to delete both the meme's metadata from the database and the associated image file from storage.
+* **Example (`curl`):**
+    ```bash
+    # Replace a1b2c3d4-e5f6-7890-1234-567890abcdef with an actual ID
+    curl -X DELETE http://localhost:3000/meme/a1b2c3d4-e5f6-7890-1234-567890abcdef
+    ```
+* **Successful Response (204 No Content):** No JSON body is returned, just the HTTP status code indicating success.
+* **Not Found Response (404 Not Found):** If you try to delete a meme ID that doesn't exist.
+    ```json
+    {
+      "error": "Meme metadata not found with ID: a1b2c3d4-0000-0000-0000-567890abcdef"
+    }
+    ```
+
+## Frontend Integration Example (Vue.js)
+
+How could a frontend website (like one built with Vue.js) use this API?
+
+**General Flow:**
+
+1.  The user interacts with the Vue.js application running in their web browser (e.g., at `http://localhost:8080`).
+2.  The Vue JavaScript code makes HTTP requests (using `Workspace` or libraries like `axios`) to the Axum backend API (running at `http://localhost:3000`).
+3.  The Axum backend processes the request, interacts with AWS (DynamoDB/S3), and sends a JSON response back to the Vue app.
+4.  The Vue app receives the JSON response and updates the user interface.
+
+**Example Scenarios:**
+
+* **Displaying All Memes:**
+    * A Vue component (e.g., `MemeList.vue`) would fetch data when it's created (e.g., in the `mounted()` hook).
+    ```javascript
+    // Inside MemeList.vue script section
+    import { ref, onMounted } from 'vue';
+
+    const memes = ref([]); // Reactive array to hold memes
+    const error = ref(null);
+
+    onMounted(async () => {
+      try {
+        const response = await fetch('http://localhost:3000/memes'); // GET request
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        memes.value = await response.json(); // Store JSON array in memes
+      } catch (e) {
+        error.value = e.message;
+        console.error("Failed to fetch memes:", e);
+      }
+    });
+    ```
+    * The component's template would use `v-for` to loop through the `memes` array and display the `title` and `description`.
+
+* **Uploading a New Meme:**
+    * A Vue component (e.g., `UploadForm.vue`) would have a form with text inputs and `<input type="file">`.
+    ```html
+    <form @submit.prevent="uploadMeme">
+      <input type="text" v-model="title" placeholder="Title" required>
+      <input type="text" v-model="description" placeholder="Description" required>
+      <input type="file" @change="handleFileChange" accept="image/*" required>
+      <button type="submit">Upload</button>
+    </form>
+    ```
+    ```javascript
+    // Inside UploadForm.vue script section
+    import { ref } from 'vue';
+
+    const title = ref('');
+    const description = ref('');
+    const imageFile = ref(null);
+    // ... other refs for loading/error state
+
+    const handleFileChange = (event) => {
+      imageFile.value = event.target.files[0];
+    };
+
+    const uploadMeme = async () => {
+      if (!imageFile.value) return;
+
+      const formData = new FormData();
+      formData.append('title', title.value);
+      formData.append('description', description.value);
+      formData.append('image', imageFile.value); // Append the file object
+
+      try {
+        // Set loading state
+        const response = await fetch('http://localhost:3000/upload_meme', {
+          method: 'POST',
+          body: formData, // Send FormData
+          // Headers usually not needed for FormData with fetch, browser sets Content-Type
+        });
+
+        if (!response.ok) {
+           const errorData = await response.json(); // Try to get error details
+           throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        const newMeme = await response.json();
+        console.log('Upload successful:', newMeme);
+        // Handle success (e.g., clear form, show message, maybe navigate)
+        // Clear loading state
+
+      } catch (e) {
+        console.error("Upload failed:", e);
+        // Set error state
+        // Clear loading state
+      }
+    };
+    ```
+
+* **Displaying Images:**
+    To be written ...
+
+* **CORS (Cross-Origin Resource Sharing):**
+    * The Vue app (e.g., `localhost:8080`) and the Axum API (`localhost:3000`) are on different "origins" (ports). Browsers normally block requests between different origins for security.
+    * The `CorsLayer::permissive()` in the Axum backend tells the browser it's okay to allow requests from *any* origin. This is fine for local development but should be restricted to only your frontend's actual URL in a production environment.
+
+**Potential Next Steps/Improvements:**
+
+* Add user authentication/authorization.
+* Implement proper pagination for the `GET /memes` endpoint.
+* Add update functionality for memes.
+* Write unit and integration tests.
+* Deploy the application (e.g., to AWS Lambda or a container service), switching from LocalStack to real AWS services.
+* Refine error handling and provide more specific error responses.
+
+Feel free to explore, modify, and build upon this foundation!
