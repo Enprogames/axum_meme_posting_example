@@ -16,6 +16,12 @@ use std::sync::Arc;
 use tracing;
 use uuid::Uuid;
 
+pub async fn health_check() -> StatusCode {
+    StatusCode::OK // Basic check: server is running
+    // For a more thorough check, we could try connecting to DB/S3 here,
+    // but keep it fast and simple for frequent health checks.
+}
+
 // upload_meme handler remains mostly the same...
 pub async fn upload_meme(
     State(state): State<Arc<AppState>>,

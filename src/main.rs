@@ -8,6 +8,8 @@ use crate::{
     startup::init_resources,
     storage::S3FileStorage,
 };
+use tokio::signal;
+use tracing::info;
 use std::sync::Arc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -78,8 +80,33 @@ async fn main() -> Result<(), AppError> {
         .map_err(|e| AppError::InitError(format!("Failed to bind to address {}: {}", addr, e)))?;
 
     axum::serve(listener, app.into_make_service())
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| AppError::InternalServerError(format!("Server execution failed: {}", e)))?;
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>(); // Pending forever on non-Unix
+
+    tokio::select! {
+        _ = ctrl_c => { info!("Received Ctrl+C, shutting down gracefully...")},
+        _ = terminate => { info!("Received SIGTERM, shutting down gracefully...")},
+    }
 }

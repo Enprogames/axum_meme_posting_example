@@ -1,0 +1,23 @@
+# Git specific
+.git
+.gitignore
+
+# Build artifacts
+target/
+**/target/
+
+# Environment files (should not be baked into the image)
+.env
+.env.*
+!.env.example # Allow example file
+
+# LocalStack data
+.localstack/
+
+# IDE specific
+.idea/
+.vscode/
+
+# OS specific
+.DS_Store
+Thumbs.db

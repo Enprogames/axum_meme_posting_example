@@ -16,6 +16,7 @@ use tower_http::{
 /// Creates the Axum router and associates routes with handlers.
 pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
+        .route("/health", get(handlers::health_check))
         .route("/upload_meme", post(handlers::upload_meme))
         .route("/meme/{id}",
             get(handlers::get_meme)

@@ -1,18 +1,89 @@
 services:
-  localstack:
-    image: localstack/localstack:latest
+  app:
+    build:
+      context: .
+      # Optional: Pass build arguments like profile=debug for dev builds
+      # args:
+      #   CARGO_PROFILE: debug
+    container_name: meme_api_app
     ports:
-      - "4566:4566" # Default port for all services
+      # Expose port 3000 on the host, mapped to container port 3000
+      # Use variable for flexibility if needed: "${APP_PORT_HOST:-3000}:3000"
+      - "3000:3000"
+    env_file:
+      # Load environment variables from .env file for local development ease.
+      # Variables defined under 'environment:' below take precedence.
+      - ./.env
     environment:
+      # Define required environment variables. Use host environment variables
+      # with defaults (VAR:-default) for flexibility.
+      APP_SERVER_ADDRESS: "0.0.0.0:3000" # Listen on all interfaces inside container
+      APP_S3_BUCKET_NAME: ${APP_S3_BUCKET_NAME:-meme-images-dev}
+      APP_DYNAMODB_TABLE_NAME: ${APP_DYNAMODB_TABLE_NAME:-memes-dev}
+      AWS_ENDPOINT_URL: "http://localstack:4566" # Connect to localstack service name
+      AWS_REGION: ${AWS_REGION:-ca-central-1}
+      AWS_ACCESS_KEY_ID: "test" # Dummy creds for LocalStack
+      AWS_SECRET_ACCESS_KEY: "test"
+      RUST_LOG: ${RUST_LOG:-info,axum_meme_posting_example=debug,tower_http=info}
+    depends_on:
+      localstack:
+        # More robust startup: Wait until localstack reports as healthy
+        condition: service_healthy
+    networks:
+      # Connect to the custom network
+      - app_network
+    healthcheck:
+      # Optional but recommended: Compose-level healthcheck (from host/network perspective)
+      # Complements the Dockerfile HEALTHCHECK
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 30s # Give app time to start before checking
+    restart: unless-stopped # Automatically restart container if it stops unexpectedly
+
+  # LocalStack Service
+  localstack:
+    # Pin localstack version for stability, check latest stable version
+    image: localstack/localstack:3.3
+    container_name: meme_api_localstack
+    ports:
+      # LocalStack main gateway
+      - "4566:4566"
+    environment:
+      # Define services to start
       - SERVICES=dynamodb,s3
-      - DEBUG=1 # Use 0 or remove for less verbose logs
-      - AWS_DEFAULT_REGION=ca-central-1 # Set default region
-      # DOCKER_HOST is needed on some systems for LS to interact with the mounted socket
+      # Optional: Set default region (should match app's AWS_REGION)
+      - AWS_DEFAULT_REGION=${AWS_REGION:-ca-central-1}
+      # Verbosity: Set DEBUG=1 in host env for more logs (e.g., DEBUG=1 docker-compose up)
+      - DEBUG=${DEBUG:-0}
+      # Required for some LocalStack features like Lambda container interaction
       - DOCKER_HOST=unix:///var/run/docker.sock
+      # Optional: Persist data to specific directory inside container (used by volume)
+      # - DATA_DIR=/var/lib/localstack # Default location often used
     volumes:
-      # Mount host directory to the *standard* persistence location inside the container
-      - "./.localstack/state:/var/lib/localstack"
-      # Mount the Docker socket (recommended for full functionality)
+      # Use a named volume for better persistence management (Docker manages it)
+      - localstack_data:/var/lib/localstack
+      # Mount Docker socket (required by LocalStack)
       - "/var/run/docker.sock:/var/run/docker.sock"
-      # You might still want the init hooks volume if you add initialization scripts later
-      # - "./.localstack/init:/etc/localstack/init/ready.d"
+    networks:
+      # Connect to the custom network
+      - app_network
+    healthcheck:
+      # Use LocalStack's built-in health endpoint
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10 # Give LocalStack more time/retries to fully initialize
+      start_period: 15s # Wait a bit before initial check
+    restart: unless-stopped
+
+# Define the custom network
+networks:
+  app_network:
+    driver: bridge # Standard Docker network driver
+
+# Define the named volume for LocalStack data persistence
+volumes:
+  localstack_data:
+    driver: local # Standard Docker volume driver
