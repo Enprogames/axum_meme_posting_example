@@ -1,46 +1,42 @@
-use aws_config::SdkConfig;
+use crate::config::Config;
+use crate::errors::AppError;
+use aws_config::{Region, BehaviorVersion, SdkConfig};
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_s3::Client as S3Client;
-// Import Credentials needed for static credentials
-use aws_credential_types::Credentials;
+use tracing;
 
-/// Loads the AWS SDK configuration.
-///
-/// The configuration points to a local endpoint (e.g. Localstack on http://localhost:4566)
-/// and uses the "ca-central-1" region. Also enables dummy credentials for LocalStack.
-pub async fn load_config() -> SdkConfig {
-    aws_config::defaults(aws_config::BehaviorVersion::latest())
-        // Setting endpoint_url tells the SDK to target LocalStack
-        .endpoint_url("http://localhost:4566")
-        // Provide explicit dummy credentials for LocalStack interaction
-        .credentials_provider(Credentials::new(
-            "test", // access_key_id
-            "test", // secret_access_key
-            None,   // session_token
-            None,   // expiry
-            "StaticCredentials", // provider_name
-        ))
-        // Ensure the region matches LocalStack and your intended region
-        .region(aws_config::Region::new("ca-central-1"))
-        .load()
-        .await
+// Creates the base AWS SDK configuration based on application config.
+// Reads region and optional endpoint URL from `Config`.
+// Uses the default credential provider chain (which reads env vars, profiles, etc.).
+pub async fn create_sdk_config(config: &Config) -> Result<SdkConfig, AppError> {
+    let region = Region::new(config.aws_region.clone());
+    tracing::info!(sdk_region = %config.aws_region, "Setting SDK region");
+
+    let mut config_loader = aws_config::defaults(BehaviorVersion::latest())
+        .region(region); 
+
+    if let Some(endpoint_url) = &config.localstack_endpoint {
+        tracing::info!("Using localstack endpoint override: {}", endpoint_url);
+        config_loader = config_loader.endpoint_url(endpoint_url);
+    } else {
+        tracing::info!("Using default AWS endpoints and credential resolution.");
+    }
+
+    // Load the configuration.
+    let sdk_config_result = config_loader.load().await;
+
+    Ok(sdk_config_result)
 }
 
-/// Creates and returns a DynamoDB client configured for LocalStack.
-pub async fn create_dynamodb_client() -> DynamoDbClient {
-    let config = load_config().await;
-    DynamoDbClient::new(&config)
+// Creates a DynamoDB client from a shared SdkConfig.
+pub fn create_dynamodb_client(sdk_config: &SdkConfig) -> DynamoDbClient {
+    DynamoDbClient::new(sdk_config)
 }
 
-/// Creates and returns an S3 client configured for LocalStack.
-pub async fn create_s3_client() -> S3Client {
-    let shared_config = load_config().await; // Load the base SdkConfig
-
-    // Create S3 specific config FROM the shared config
-    let s3_config = aws_sdk_s3::config::Builder::from(&shared_config)
-        .force_path_style(true) // Apply S3 specific settings
-        .build();
-
-    // Create the S3 client using the S3 specific config
+// Creates an S3 client from a shared SdkConfig.
+pub fn create_s3_client(sdk_config: &SdkConfig) -> S3Client {
+    let s3_config_builder = aws_sdk_s3::config::Builder::from(sdk_config)
+        .force_path_style(true);
+    let s3_config = s3_config_builder.build();
     S3Client::from_conf(s3_config)
 }

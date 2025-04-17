@@ -1,11 +1,13 @@
 use crate::{
+    config::Config,
     errors::{AppError, StorageError},
     models::Meme,
     AppState,
 };
+use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_s3::Client as S3Client;
 use axum::{
     body::Body,
-    // ----------------------------------------------------
     extract::{Multipart, Path, State},
     http::{header, StatusCode},
     response::{IntoResponse, Response},
@@ -16,13 +18,48 @@ use std::sync::Arc;
 use tracing;
 use uuid::Uuid;
 
-pub async fn health_check() -> StatusCode {
-    StatusCode::OK // Basic check: server is running
-    // For a more thorough check, we could try connecting to DB/S3 here,
-    // but keep it fast and simple for frequent health checks.
+/// Verifies connectivity to DynamoDB and S3 backend services.
+pub async fn health_check(State(state): State<Arc<AppState>>) -> StatusCode {
+    let db_client: &DynamoDbClient = &state.db_client;
+    let s3_client: &S3Client = &state.s3_client;
+    let config: &Config = &state.config; // Get config from state
+
+    // Check DynamoDB using table name from config
+    let db_check_result = db_client
+        .describe_table()
+        .table_name(&config.dynamodb_table_name) // Use config value
+        .send()
+        .await;
+
+    if let Err(e) = db_check_result {
+        tracing::error!(
+            error = ?e,
+            table_name = %config.dynamodb_table_name, // Log config value
+            "Health check failed: DynamoDB connectivity error."
+        );
+        return StatusCode::SERVICE_UNAVAILABLE;
+    }
+
+    // Check S3 using bucket name from config
+    let s3_check_result = s3_client
+        .head_bucket()
+        .bucket(&config.meme_bucket_name) // Use config value
+        .send()
+        .await;
+
+    if let Err(e) = s3_check_result {
+         tracing::error!(
+            error = ?e,
+            bucket_name = %config.meme_bucket_name, // Log config value
+            "Health check failed: S3 connectivity error."
+         );
+        return StatusCode::SERVICE_UNAVAILABLE;
+    }
+
+    tracing::debug!("Health check passed: DynamoDB and S3 connectivity OK.");
+    StatusCode::OK
 }
 
-// upload_meme handler remains mostly the same...
 pub async fn upload_meme(
     State(state): State<Arc<AppState>>,
     mut multipart: Multipart,
@@ -88,7 +125,6 @@ pub async fn upload_meme(
 }
 
 
-// get_meme handler remains the same...
 pub async fn get_meme(
     State(state): State<Arc<AppState>>,
     Path(id_str): Path<String>,
@@ -102,7 +138,6 @@ pub async fn get_meme(
     }
 }
 
-// list_memes handler remains the same...
 pub async fn list_memes(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {

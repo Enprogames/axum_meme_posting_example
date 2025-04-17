@@ -25,3 +25,4 @@ async-trait = "0.1"
 
 thiserror = "2.0" # Useful for defining custom errors
 mime_guess = "2.0" # For guessing Content-Type during S3 upload
+backoff = { version = "0.4", features = ["tokio"] } # For exponential backoff retries
